@@ -52,8 +52,7 @@ PTHEOF
 echo "[OK] _pth configured with absolute paths."
 
 # ── Install MetaTrader5 + mt5linux (skip if already installed) ────────────────
-SITE_PKGS="$WINE_PY_DIR/Lib/site-packages"
-if [ ! -d "$SITE_PKGS/MetaTrader5" ] && [ ! -d "$SITE_PKGS/MetaTrader5-"* ] 2>/dev/null; then
+if ! wine "$WINE_PYTHON" -c "import mt5linux" 2>/dev/null; then
     echo "[INIT] Installing MetaTrader5 + mt5linux..."
     wine "$WINE_PYTHON" -m pip install MetaTrader5 mt5linux \
          --no-warn-script-location 2>&1 | tee /config/logs/pip.log || true
