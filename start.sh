@@ -42,14 +42,26 @@ if [ ! -f "$WINE_PYTHON" ]; then
     echo "[OK] Windows Python ready."
 fi
 
-# PYTHONHOME tells embeddable Python where its stdlib zip lives (fixes 'no module encodings')
-export PYTHONHOME="C:\\python311"
+# Write batch files that set PYTHONHOME in the Windows environment before running Python
+# (Setting PYTHONHOME as a Linux env var doesn't reliably translate through Wine)
+cat > "$WINEPREFIX/drive_c/run_pip.bat" << 'EOF'
+@echo off
+set PYTHONHOME=C:\python311
+set PYTHONPATH=C:\python311\python311.zip
+C:\python311\Scripts\pip.exe install MetaTrader5 mt5linux --no-warn-script-location
+EOF
+
+cat > "$WINEPREFIX/drive_c/run_bridge.bat" << 'EOF'
+@echo off
+set PYTHONHOME=C:\python311
+set PYTHONPATH=C:\python311\python311.zip;C:\python311\Lib\site-packages
+C:\python311\python.exe -c "from mt5linux import MetaTrader5; mt5 = MetaTrader5(); mt5.run_server(host='0.0.0.0', port=8001)"
+EOF
 
 # ── Install MetaTrader5 + mt5linux into Windows Python ────────────────────────
-WINE_PIP="$WINE_PY_DIR/Scripts/pip.exe"
-if ! wine "$WINE_PYTHON" -c "import MetaTrader5" 2>/dev/null; then
+if ! wine cmd.exe /c "C:\\check_mt5.bat" 2>/dev/null; then
     echo "[INIT] Installing MetaTrader5 + mt5linux..."
-    wine "$WINE_PIP" install MetaTrader5 mt5linux --no-warn-script-location 2>/dev/null || true
+    wine cmd.exe /c "C:\\run_pip.bat" 2>&1 | tee /config/logs/pip.log || true
     echo "[OK] Packages installed."
 fi
 
@@ -79,13 +91,9 @@ else
     echo "[WARN] MT5 exe not found — skipping terminal launch."
 fi
 
-# ── Start mt5linux bridge (inside Wine Python) ────────────────────────────────
+# ── Start mt5linux bridge via batch file (sets PYTHONHOME in Windows env) ─────
 echo "[START] Starting MT5 Python bridge on port 8001..."
-wine "$WINE_PYTHON" -c "
-from mt5linux import MetaTrader5
-mt5 = MetaTrader5()
-mt5.run_server(host='0.0.0.0', port=8001)
-" 2>&1 | tee /config/logs/bridge.log || true
+wine cmd.exe /c "C:\\run_bridge.bat" 2>&1 | tee /config/logs/bridge.log || true
 
 # ── Fallback: keep container alive so you can debug via VNC ──────────────────
 echo "[WARN] Bridge exited — container staying alive for debugging."
