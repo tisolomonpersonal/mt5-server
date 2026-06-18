@@ -27,10 +27,12 @@ WINE_PYTHON="$WINE_PY_DIR/python.exe"
 
 if [ ! -f "$WINE_PYTHON" ]; then
     echo "[INIT] Downloading embeddable Python 3.11..."
-    wget -q "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" \
-         -O /tmp/pyembed.zip
+    wget "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" \
+         -O /tmp/pyembed.zip 2>&1 || { echo "[ERROR] Python download failed"; }
     mkdir -p "$WINE_PY_DIR"
-    unzip -q /tmp/pyembed.zip -d "$WINE_PY_DIR"
+    unzip /tmp/pyembed.zip -d "$WINE_PY_DIR" 2>&1 || { echo "[ERROR] unzip failed"; }
+    echo "[DEBUG] Contents of $WINE_PY_DIR:"
+    ls "$WINE_PY_DIR/" 2>/dev/null || echo "(empty)"
     # Enable site-packages so pip packages are importable
     PTH="$WINE_PY_DIR/python311._pth"
     [ -f "$PTH" ] && sed -i 's/#import site/import site/' "$PTH" || echo "import site" >> "$PTH"
