@@ -42,6 +42,9 @@ if [ ! -f "$WINE_PYTHON" ]; then
     echo "[OK] Windows Python ready."
 fi
 
+# PYTHONHOME tells embeddable Python where its stdlib zip lives (fixes 'no module encodings')
+export PYTHONHOME="C:\\python311"
+
 # ── Install MetaTrader5 + mt5linux into Windows Python ────────────────────────
 WINE_PIP="$WINE_PY_DIR/Scripts/pip.exe"
 if ! wine "$WINE_PYTHON" -c "import MetaTrader5" 2>/dev/null; then
