@@ -6,17 +6,20 @@ ENV WINEARCH=win64
 ENV DISPLAY=:1
 ENV BRIDGE_PORT=8001
 
-RUN dpkg --add-architecture i386 \
-    && apt-get update \
-    && apt-get install -y \
-        wget curl cabextract unzip procps \
-        xvfb x11vnc \
-        novnc websockify \
-        python3 python3-pip \
-        winbind wine wine32:i386 wine64 \
-    && pip3 install --no-cache-dir mt5linux \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        wget \
+        unzip \
+        procps \
+        python3-minimal \
+        xvfb \
+        x11vnc \
+        novnc \
+        websockify \
+        winbind \
+        wine64 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
