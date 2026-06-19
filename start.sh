@@ -2,6 +2,7 @@
 # No set -e — we handle errors manually so the container never crashes
 
 LOG=/config/logs/startup.log
+BRIDGE_PORT="${BRIDGE_PORT:-8001}"
 mkdir -p /config/wine /config/logs
 exec > >(tee -a "$LOG") 2>&1
 
@@ -86,11 +87,13 @@ else
 fi
 
 # ── Start mt5linux bridge ─────────────────────────────────────────────────────
-echo "[START] Starting MT5 Python bridge on port 8001..."
+echo "[START] Starting MT5 Python bridge on port ${BRIDGE_PORT}..."
 wine "$WINE_PYTHON" -c "
+import os
 from mt5linux import MetaTrader5
+port = int(os.environ.get('BRIDGE_PORT', '8001'))
 mt5 = MetaTrader5()
-mt5.run_server(host='0.0.0.0', port=8001)
+mt5.run_server(host='0.0.0.0', port=port)
 " 2>&1 | tee /config/logs/bridge.log || true
 
 # ── Fallback: keep container alive so you can debug via VNC ──────────────────
