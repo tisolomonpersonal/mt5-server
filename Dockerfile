@@ -6,7 +6,8 @@ ENV WINEARCH=win64
 ENV DISPLAY=:1
 ENV BRIDGE_PORT=8001
 
-RUN apt-get update \
+RUN dpkg --add-architecture i386 \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         wget \
         unzip \
@@ -16,6 +17,7 @@ RUN apt-get update \
         winbind \
         wine \
         wine64 \
+        wine32:i386 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
