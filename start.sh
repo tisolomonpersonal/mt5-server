@@ -99,28 +99,52 @@ run_wine 90 "$WINE_BIN" "$WINE_PYTHON" -V || {
 }
 echo "[OK] Windows Python responds."
 
+# ── Package verification / installation ───────────────────────────────────────
 echo "[CHECK] Verifying Windows-side packages..."
-if run_wine 90 "$WINE_BIN" "$WINE_PYTHON" -c "import MetaTrader5, mt5linux; print('packages_ok')" >/dev/null 2>&1; then
+if run_wine 120 "$WINE_BIN" "$WINE_PYTHON" -c "
+import MetaTrader5
+import mt5linux
+import rpyc
+import win32api
+print('packages_ok')
+"; then
     echo "[OK] Windows-side packages already present."
 else
     echo "[INIT] Installing Windows-side Python packages..."
-    wget -q "https://bootstrap.pypa.io/get-pip.py" -O /tmp/get-pip.py
 
-    run_wine 180 "$WINE_BIN" "$WINE_PYTHON" /tmp/get-pip.py --no-warn-script-location \
-        2>&1 | tee "$BOOTSTRAP_LOG" || {
-        echo "[ERROR] Failed to bootstrap pip."
-        exit 1
-    }
+    if ! run_wine 90 "$WINE_BIN" "$WINE_PYTHON" -m pip --version >/dev/null 2>&1; then
+        echo "[INIT] Bootstrapping pip..."
+        wget -q "https://bootstrap.pypa.io/get-pip.py" -O /tmp/get-pip.py
+        run_wine 180 "$WINE_BIN" "$WINE_PYTHON" /tmp/get-pip.py --no-warn-script-location \
+            2>&1 | tee "$BOOTSTRAP_LOG" || {
+            echo "[ERROR] Failed to bootstrap pip."
+            exit 1
+        }
+    else
+        echo "[OK] pip already present."
+    fi
 
-    run_wine 180 "$WINE_BIN" "$WINE_PYTHON" -m pip install --upgrade pip --no-warn-script-location \
-        2>&1 | tee -a "$BOOTSTRAP_LOG" || {
-        echo "[ERROR] Failed to upgrade pip."
-        exit 1
-    }
-
-    run_wine 300 "$WINE_BIN" "$WINE_PYTHON" -m pip install --upgrade MetaTrader5 mt5linux rpyc pywin32 \
-        --no-warn-script-location 2>&1 | tee "$PIP_LOG" || {
+    run_wine 300 "$WINE_BIN" "$WINE_PYTHON" -m pip install \
+        MetaTrader5==5.0.5735 \
+        mt5linux==1.0.3 \
+        rpyc==5.2.3 \
+        pywin32==312 \
+        --no-warn-script-location \
+        --no-cache-dir \
+        2>&1 | tee "$PIP_LOG" || {
         echo "[ERROR] Failed to install Windows-side packages."
+        exit 1
+    }
+
+    echo "[CHECK] Re-verifying Windows-side packages..."
+    run_wine 120 "$WINE_BIN" "$WINE_PYTHON" -c "
+import MetaTrader5
+import mt5linux
+import rpyc
+import win32api
+print('packages_ok')
+" || {
+        echo "[ERROR] Package verification still failed after install."
         exit 1
     }
 
