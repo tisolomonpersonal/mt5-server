@@ -20,6 +20,7 @@ export WINEDEBUG="${WINEDEBUG:--all}"
 
 PYTHON_EMBED_VERSION="${PYTHON_EMBED_VERSION:-3.9.13}"
 PYTHON_MM="$(echo "$PYTHON_EMBED_VERSION" | awk -F. '{print $1 $2}')"
+PYTHON_SERIES="$(echo "$PYTHON_EMBED_VERSION" | awk -F. '{print $1 "." $2}')"
 WINE_PY_DIR="$WINEPREFIX/drive_c/python${PYTHON_MM}"
 WINE_PYTHON="$WINE_PY_DIR/python.exe"
 WINE_PTH="$WINE_PY_DIR/python${PYTHON_MM}._pth"
@@ -173,7 +174,7 @@ else
 
     if ! run_wine 90 "$WINE_BIN" "$WINE_PYTHON" -m pip --version >/dev/null 2>&1; then
         echo "[INIT] Bootstrapping pip..."
-        wget -q "https://bootstrap.pypa.io/get-pip.py" -O /tmp/get-pip.py
+        wget -q "https://bootstrap.pypa.io/pip/${PYTHON_SERIES}/get-pip.py" -O /tmp/get-pip.py
         run_wine 180 "$WINE_BIN" "$WINE_PYTHON" /tmp/get-pip.py --no-warn-script-location \
             2>&1 | tee "$BOOTSTRAP_LOG" || {
             echo "[ERROR] Failed to bootstrap pip."
