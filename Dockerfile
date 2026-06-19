@@ -10,6 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         wget \
+        curl \
         unzip \
         procps \
         xvfb \
@@ -25,7 +26,8 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --install-recommends \
         winehq-stable \
-        winetricks \
+    && wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
+    && chmod +x /usr/local/bin/winetricks \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key
 
