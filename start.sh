@@ -1,5 +1,5 @@
 #!/bin/bash
-set -u
+set -euo pipefail
 
 LOG=/config/logs/startup.log
 BRIDGE_LOG=/config/logs/bridge.log
@@ -16,10 +16,20 @@ export WINEPREFIX="${WINEPREFIX:-/config/wine}"
 export WINEARCH="${WINEARCH:-win64}"
 export DISPLAY=:1
 export WINEDLLOVERRIDES="mscoree,mshtml="
+export WINEDEBUG="${WINEDEBUG:--all}"
+
+PYTHON_EMBED_VERSION="${PYTHON_EMBED_VERSION:-3.9.13}"
+PYTHON_MM="$(echo "$PYTHON_EMBED_VERSION" | awk -F. '{print $1 $2}')"
+WINE_PY_DIR="$WINEPREFIX/drive_c/python${PYTHON_MM}"
+WINE_PYTHON="$WINE_PY_DIR/python.exe"
+WINE_PTH="$WINE_PY_DIR/python${PYTHON_MM}._pth"
+PYTHON_VERSION_MARKER="$WINE_PY_DIR/.solo_python_version"
+WINETRICKS_BIN="$(command -v winetricks || true)"
 
 echo "=== MT5 Container Starting $(date) ==="
 echo "[INFO] WINEPREFIX=$WINEPREFIX"
 echo "[INFO] BRIDGE_PORT=$BRIDGE_PORT"
+echo "[INFO] PYTHON_EMBED_VERSION=$PYTHON_EMBED_VERSION"
 
 WINE_BIN="$(command -v wine || true)"
 if [ -z "$WINE_BIN" ]; then
@@ -50,6 +60,51 @@ run_wine() {
     return $code
 }
 
+clean_windows_python_packages() {
+    echo "[INIT] Cleaning Windows-side package remnants..."
+    rm -rf \
+        "$WINE_PY_DIR/Lib/site-packages/MetaTrader5" \
+        "$WINE_PY_DIR/Lib/site-packages/MetaTrader5-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/mt5linux" \
+        "$WINE_PY_DIR/Lib/site-packages/mt5linux-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/rpyc" \
+        "$WINE_PY_DIR/Lib/site-packages/rpyc-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/win32" \
+        "$WINE_PY_DIR/Lib/site-packages/win32com" \
+        "$WINE_PY_DIR/Lib/site-packages/pythonwin" \
+        "$WINE_PY_DIR/Lib/site-packages/pywin32-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/pywin32_system32" \
+        "$WINE_PY_DIR/Lib/site-packages/pywintypes"* \
+        "$WINE_PY_DIR/Lib/site-packages/pythoncom"* \
+        "$WINE_PY_DIR/Lib/site-packages/pip" \
+        "$WINE_PY_DIR/Lib/site-packages/pip-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/setuptools" \
+        "$WINE_PY_DIR/Lib/site-packages/setuptools-"*".dist-info" \
+        "$WINE_PY_DIR/Lib/site-packages/wheel" \
+        "$WINE_PY_DIR/Lib/site-packages/wheel-"*".dist-info" \
+        >/dev/null 2>&1 || true
+}
+
+install_vcruntime() {
+    if [ -z "$WINETRICKS_BIN" ]; then
+        echo "[WARN] winetricks not found; skipping vcrun installation."
+        return 0
+    fi
+
+    if [ -f "$WINEPREFIX/.vcrun2019_installed" ]; then
+        echo "[OK] Native VC runtime already present."
+        return 0
+    fi
+
+    echo "[INIT] Installing native VC runtime with winetricks..."
+    run_wine 600 "$WINETRICKS_BIN" -q vcrun2019 || {
+        echo "[ERROR] winetricks vcrun2019 installation failed."
+        exit 1
+    }
+    touch "$WINEPREFIX/.vcrun2019_installed"
+    echo "[OK] Native VC runtime installed."
+}
+
 # ── Virtual display ────────────────────────────────────────────────────────────
 if ! pgrep -f "Xvfb :1" >/dev/null 2>&1; then
     Xvfb :1 -screen 0 1280x800x24 &
@@ -70,24 +125,26 @@ else
     echo "[OK] Existing Wine prefix detected."
 fi
 
-# ── Windows Python (embeddable) ───────────────────────────────────────────────
-WINE_PY_DIR="$WINEPREFIX/drive_c/python311"
-WINE_PYTHON="$WINE_PY_DIR/python.exe"
+install_vcruntime
 
-if [ ! -f "$WINE_PYTHON" ]; then
-    echo "[INIT] Downloading embeddable Python 3.11..."
-    wget -q "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -O /tmp/pyembed.zip
+# ── Windows Python (embeddable) ───────────────────────────────────────────────
+if [ ! -f "$WINE_PYTHON" ] || [ ! -f "$PYTHON_VERSION_MARKER" ] || ! grep -qx "$PYTHON_EMBED_VERSION" "$PYTHON_VERSION_MARKER" 2>/dev/null; then
+    echo "[INIT] Downloading embeddable Python ${PYTHON_EMBED_VERSION}..."
+    rm -rf "$WINE_PY_DIR"
     mkdir -p "$WINE_PY_DIR"
+    wget -q "https://www.python.org/ftp/python/${PYTHON_EMBED_VERSION}/python-${PYTHON_EMBED_VERSION}-embed-amd64.zip" -O /tmp/pyembed.zip
     unzip -o /tmp/pyembed.zip -d "$WINE_PY_DIR" >/dev/null
+    printf '%s\n' "$PYTHON_EMBED_VERSION" > "$PYTHON_VERSION_MARKER"
     echo "[OK] Windows Python unpacked."
 else
     echo "[OK] Windows Python already present."
 fi
 
-cat > "$WINE_PY_DIR/python311._pth" << 'PTHEOF'
-C:\python311\python311.zip
-C:\python311
-C:\python311\Lib\site-packages
+mkdir -p "$WINE_PY_DIR/Lib/site-packages"
+cat > "$WINE_PTH" << PTHEOF
+C:\python${PYTHON_MM}\python${PYTHON_MM}.zip
+C:\python${PYTHON_MM}
+C:\python${PYTHON_MM}\Lib\site-packages
 import site
 PTHEOF
 echo "[OK] _pth configured."
@@ -102,15 +159,17 @@ echo "[OK] Windows Python responds."
 # ── Package verification / installation ───────────────────────────────────────
 echo "[CHECK] Verifying Windows-side packages..."
 if run_wine 120 "$WINE_BIN" "$WINE_PYTHON" -c "
-import MetaTrader5
-import mt5linux
-import rpyc
-import win32api
+import importlib
+mods = ['MetaTrader5', 'mt5linux', 'rpyc', 'win32api']
+for name in mods:
+    importlib.import_module(name)
 print('packages_ok')
 "; then
     echo "[OK] Windows-side packages already present."
 else
     echo "[INIT] Installing Windows-side Python packages..."
+
+    clean_windows_python_packages
 
     if ! run_wine 90 "$WINE_BIN" "$WINE_PYTHON" -m pip --version >/dev/null 2>&1; then
         echo "[INIT] Bootstrapping pip..."
@@ -123,6 +182,14 @@ else
     else
         echo "[OK] pip already present."
     fi
+
+    run_wine 180 "$WINE_BIN" "$WINE_PYTHON" -m pip install --upgrade \
+        pip \
+        setuptools \
+        wheel \
+        --no-warn-script-location \
+        --no-cache-dir \
+        2>&1 | tee -a "$PIP_LOG" >/dev/null
 
     run_wine 300 "$WINE_BIN" "$WINE_PYTHON" -m pip install \
         MetaTrader5==5.0.5735 \
@@ -138,10 +205,10 @@ else
 
     echo "[CHECK] Re-verifying Windows-side packages..."
     run_wine 120 "$WINE_BIN" "$WINE_PYTHON" -c "
-import MetaTrader5
-import mt5linux
-import rpyc
-import win32api
+import importlib
+mods = ['MetaTrader5', 'mt5linux', 'rpyc', 'win32api']
+for name in mods:
+    importlib.import_module(name)
 print('packages_ok')
 " || {
         echo "[ERROR] Package verification still failed after install."
