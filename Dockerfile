@@ -11,12 +11,10 @@ RUN apt-get update \
         wget \
         unzip \
         procps \
-        python3-minimal \
+        ca-certificates \
         xvfb \
-        x11vnc \
-        novnc \
-        websockify \
         winbind \
+        wine \
         wine64 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -24,7 +22,7 @@ RUN apt-get update \
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-EXPOSE 6080 8001
+EXPOSE 8001
 
 VOLUME ["/config"]
 
