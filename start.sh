@@ -274,11 +274,22 @@ echo "[INFO] MT5_PASSWORD_SET=$([ -n "${MT5_PASSWORD:-}" ] && echo yes || echo n
 
 for i in $(seq 1 30); do
     if run_wine 45 "$WINE_BIN" "$WINE_PYTHON" -c "
-import sys
+import sys, os
 import MetaTrader5 as mt5
 
-ok = mt5.initialize()
-print('initialize=', ok)
+kwargs = {}
+login = os.environ.get('MT5_LOGIN')
+password = os.environ.get('MT5_PASSWORD')
+server = os.environ.get('MT5_SERVER')
+if login:
+    kwargs['login'] = int(login)
+if password:
+    kwargs['password'] = password
+if server:
+    kwargs['server'] = server
+
+ok = mt5.initialize(**kwargs)
+print('initialize=', ok, 'kwargs_keys=', list(kwargs.keys()))
 
 if ok:
     print('terminal_info=', mt5.terminal_info())
