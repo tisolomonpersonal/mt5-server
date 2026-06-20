@@ -42,12 +42,20 @@ if ! pgrep -f "Xvfb $DISPLAY" >/dev/null 2>&1; then
 fi
 log "[OK] Virtual display $DISPLAY started."
 
+# ── [0/7] Initialize Wine prefix ──────────────────────────────────────────────
+if [ ! -f "$WINEPREFIX/system.reg" ]; then
+    log "[0/7] Initializing Wine prefix..."
+    $wine_executable wineboot --init
+    wineserver -w 2>/dev/null || true
+fi
+log "[0/7] Wine prefix ready."
+
 # ── [1/7] Wine Mono ───────────────────────────────────────────────────────────
 if [ ! -e "$WINEPREFIX/drive_c/windows/mono" ]; then
     log "[1/7] Installing Wine Mono..."
-    curl -L -o "$WINEPREFIX/drive_c/mono.msi" "$mono_url"
-    WINEDLLOVERRIDES=mscoree=d $wine_executable msiexec /i "$WINEPREFIX/drive_c/mono.msi" /qn
-    rm -f "$WINEPREFIX/drive_c/mono.msi"
+    curl -L -o /tmp/mono.msi "$mono_url"
+    WINEDLLOVERRIDES=mscoree=d $wine_executable msiexec /i /tmp/mono.msi /qn
+    rm -f /tmp/mono.msi
 else
     log "[1/7] Wine Mono already present."
 fi
