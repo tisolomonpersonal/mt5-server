@@ -1,46 +1,39 @@
-FROM debian:bookworm-slim
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:debianbookworm
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV WINEPREFIX=/config/wine
+ARG BUILD_DATE
+ARG VERSION
+LABEL build_version="MT5 Server:- ${VERSION} Build-date:- ${BUILD_DATE}"
+LABEL maintainer="tisolomonpersonal"
+
+ENV TITLE=MetaTrader5
+ENV WINEPREFIX="/config/.wine"
 ENV WINEARCH=win64
-ENV DISPLAY=:1
-ENV BRIDGE_PORT=8001
+ENV WINEDEBUG=-all
 
+# Install Wine, Python and tooling in a single layer
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
+        python3 \
+        python3-pip \
+        python3-venv \
         wget \
         curl \
-        unzip \
-        procps \
-        xvfb \
-        x11vnc \
-        novnc \
-        websockify \
-        winbind \
-        cabextract \
-        p7zip-full \
         gnupg2 \
         software-properties-common \
+        ca-certificates \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
     && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
     && dpkg --add-architecture i386 \
     && apt-get update \
-    && apt-get install -y --install-recommends \
-        winehq-stable \
-    && wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
-    && chmod +x /usr/local/bin/winetricks \
+    && apt-get install --install-recommends -y winehq-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key
 
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY /Metatrader /Metatrader
+RUN chmod +x /Metatrader/start.sh
+COPY /root /
 
-EXPOSE 8001
-EXPOSE 5900
-EXPOSE 6080
-
-VOLUME ["/config"]
-
-CMD ["/start.sh"]
+# 3000 = browser VNC (KasmVNC), 8001 = mt5linux RPyC bridge
+EXPOSE 3000 8001
+VOLUME /config
