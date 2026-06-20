@@ -15,6 +15,8 @@ RUN apt-get update \
         procps \
         xvfb \
         x11vnc \
+        novnc \
+        websockify \
         winbind \
         cabextract \
         p7zip-full \
@@ -37,6 +39,7 @@ RUN chmod +x /start.sh
 
 EXPOSE 8001
 EXPOSE 5900
+EXPOSE 6080
 
 VOLUME ["/config"]
 
