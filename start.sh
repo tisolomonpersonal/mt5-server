@@ -115,12 +115,23 @@ echo "[OK] Virtual display started."
 
 # ── VNC + noVNC (browser access) ─────────────────────────────────────────────
 if ! pgrep -f "x11vnc" >/dev/null 2>&1; then
-    x11vnc -display :1 -nopw -listen 0.0.0.0 -port 5900 -forever -shared -bg -o /config/logs/vnc.log
-    echo "[OK] VNC server started on port 5900."
+    if x11vnc -display :1 -nopw -listen 0.0.0.0 -rfbport 5900 -forever -shared -bg -o /config/logs/vnc.log; then
+        echo "[OK] VNC server started on port 5900."
+    else
+        echo "[WARN] x11vnc failed to start; continuing without VNC."
+    fi
 fi
 if ! pgrep -f "websockify" >/dev/null 2>&1; then
-    websockify --web /usr/share/novnc 6080 localhost:5900 &>/config/logs/novnc.log &
-    echo "[OK] noVNC started on port 6080 (open in browser)."
+    NOVNC_WEB=""
+    for d in /usr/share/novnc /usr/share/webapps/novnc; do
+        [ -d "$d" ] && NOVNC_WEB="$d" && break
+    done
+    if [ -n "$NOVNC_WEB" ]; then
+        websockify --web "$NOVNC_WEB" 6080 localhost:5900 >/config/logs/novnc.log 2>&1 &
+        echo "[OK] noVNC started on port 6080 (open /vnc.html in browser)."
+    else
+        echo "[WARN] noVNC web root not found; skipping noVNC."
+    fi
 fi
 
 # ── Wine prefix init ───────────────────────────────────────────────────────────
