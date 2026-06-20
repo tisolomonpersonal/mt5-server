@@ -113,6 +113,12 @@ if ! pgrep -f "Xvfb :1" >/dev/null 2>&1; then
 fi
 echo "[OK] Virtual display started."
 
+# ── VNC server ────────────────────────────────────────────────────────────────
+if ! pgrep -f "x11vnc" >/dev/null 2>&1; then
+    x11vnc -display :1 -nopw -listen 0.0.0.0 -port 5900 -forever -shared -bg -o /config/logs/vnc.log
+    echo "[OK] VNC server started on port 5900."
+fi
+
 # ── Wine prefix init ───────────────────────────────────────────────────────────
 if [ ! -f "$WINEPREFIX/system.reg" ]; then
     echo "[INIT] Initializing Wine prefix..."

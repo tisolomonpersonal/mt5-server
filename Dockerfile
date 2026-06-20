@@ -14,6 +14,7 @@ RUN apt-get update \
         unzip \
         procps \
         xvfb \
+        x11vnc \
         winbind \
         cabextract \
         p7zip-full \
@@ -35,6 +36,7 @@ COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 EXPOSE 8001
+EXPOSE 5900
 
 VOLUME ["/config"]
 
