@@ -10,7 +10,7 @@ ENV WINEPREFIX="/config/.wine"
 ENV WINEARCH=win64
 ENV WINEDEBUG=-all
 
-# Install Wine, Python and tooling in a single layer
+# Install Wine, Python and tooling in a single layer, then aggressively slim it
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 \
@@ -27,8 +27,20 @@ RUN apt-get update \
     && dpkg --add-architecture i386 \
     && apt-get update \
     && apt-get install --install-recommends -y winehq-stable \
+    && apt-get purge -y --auto-remove software-properties-common gnupg2 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /etc/apt/keyrings/winehq-archive.key
+    # ── Strip weight we never use at runtime ──────────────────────────────────
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /tmp/* /var/tmp/* \
+        /etc/apt/keyrings/winehq-archive.key \
+        /usr/share/doc/* \
+        /usr/share/man/* \
+        /usr/share/info/* \
+        /usr/share/lintian/* \
+        /usr/share/locale/* \
+        /opt/wine-stable/share/man/* \
+        /opt/wine-stable/share/doc/*
 
 COPY /Metatrader /Metatrader
 RUN chmod +x /Metatrader/start.sh
