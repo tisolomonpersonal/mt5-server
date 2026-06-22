@@ -43,18 +43,22 @@ if ! pgrep -f "Xvfb $DISPLAY" >/dev/null 2>&1; then
 fi
 log "[OK] Virtual display $DISPLAY started."
 
-# ── Start winbindd directly (without systemd) ─────────────────────────────────
+# ── Start winbindd directly ────────────────────────────────────────────────────
 log "[PRE] Starting winbindd..."
 winbindd --no-process-group 2>/dev/null &
 sleep 2
 log "[PRE] Winbind daemon started."
 
+# ── Diagnose wine availability ─────────────────────────────────────────────────
+log "[DIAG] Wine location: $(which wine 2>/dev/null || echo 'NOT FOUND')"
+log "[DIAG] Wine version: $(wine --version 2>&1 || echo 'FAILED')"
+log "[DIAG] Wine64 location: $(which wine64 2>/dev/null || echo 'NOT FOUND')"
+
 # ── [0/7] Initialize Wine prefix ──────────────────────────────────────────────
-# Test if the existing prefix is valid by running a simple wine command
 wine_ok=false
 if [ -f "$WINEPREFIX/system.reg" ]; then
   log "[0/7] Testing existing Wine prefix..."
-  if $wine_executable cmd /c "echo test" >/dev/null 2>&1; then
+  if timeout 10 $wine_executable cmd /c "echo wine_test_ok" 2>/dev/null | grep -q "wine_test_ok"; then
     wine_ok=true
     log "[0/7] Existing Wine prefix is healthy."
   else
@@ -64,15 +68,23 @@ if [ -f "$WINEPREFIX/system.reg" ]; then
 fi
 
 if [ "$wine_ok" = "false" ]; then
-  log "[0/7] Initializing Wine prefix..."
+  log "[0/7] Initializing Wine prefix (this may take several minutes)..."
   # Start wineserver explicitly first
   wineserver -f &
+  WSERVER_PID=$!
   sleep 2
-  # Initialize the prefix
-  WINEDEBUG=-all $wine_executable wineboot --init
+  log "[0/7] Wineserver PID: $WSERVER_PID"
+  # Initialize the prefix with verbose output for first 30 seconds
+  timeout 300 $wine_executable wineboot --init 2>&1 | head -50 || true
+  log "[0/7] Wineboot returned, waiting for server..."
   wineserver -w 2>/dev/null || true
-  sleep 5
-  log "[0/7] Wine prefix initialized."
+  sleep 3
+  # Check if prefix was created successfully  
+  if [ -f "$WINEPREFIX/system.reg" ]; then
+    log "[0/7] Wine prefix created successfully."
+  else
+    log "[0/7] WARNING: Wine prefix may not be fully initialized."
+  fi
 fi
 log "[0/7] Wine prefix ready."
 
@@ -80,7 +92,7 @@ log "[0/7] Wine prefix ready."
 if [ ! -e "$WINEPREFIX/drive_c/windows/mono" ]; then
   log "[1/7] Installing Wine Mono..."
   curl -L -o "$TMPDIR/mono.msi" "$mono_url"
-  WINEDLLOVERRIDES=mscoree=d $wine_executable msiexec /i "$TMPDIR/mono.msi" /qn
+  WINEDLLOVERRIDES=mscoree=d $wine_executable msiexec /i "$TMPDIR/mono.msi" /qn 2>&1 | tail -5 || true
   wineserver -w 2>/dev/null || true
   rm -f "$TMPDIR/mono.msi"
 else
