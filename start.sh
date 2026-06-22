@@ -7,7 +7,15 @@ export WINEARCH="${WINEARCH:-win64}"
 export WINEDEBUG="${WINEDEBUG:--all}"
 export DISPLAY="${DISPLAY:-:99}"
 
-wine_executable="wine"
+# Try wine64 first, fall back to wine
+if [ -x "/opt/wine-stable/bin/wine64" ]; then
+  wine_executable="/opt/wine-stable/bin/wine64"
+elif [ -x "/opt/wine-stable/bin/wine" ]; then
+  wine_executable="/opt/wine-stable/bin/wine"
+else
+  wine_executable="wine"
+fi
+
 metatrader_version="5.0.36"
 mt5server_port="${BRIDGE_PORT:-8001}"
 mt5file="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
@@ -50,9 +58,11 @@ sleep 2
 log "[PRE] Winbind daemon started."
 
 # ── Diagnose wine availability ─────────────────────────────────────────────────
-log "[DIAG] Wine location: $(which wine 2>/dev/null || echo 'NOT FOUND')"
-log "[DIAG] Wine version: $(wine --version 2>&1 || echo 'FAILED')"
-log "[DIAG] Wine64 location: $(which wine64 2>/dev/null || echo 'NOT FOUND')"
+log "[DIAG] Using wine executable: $wine_executable"
+log "[DIAG] Wine binaries in /opt/wine-stable/bin/: $(ls /opt/wine-stable/bin/wine* 2>/dev/null | tr '\n' ' ' || echo 'NONE')"
+log "[DIAG] Wine libs x86_64: $(ls /opt/wine-stable/lib/wine/x86_64-unix/ 2>/dev/null | head -3 || echo 'NONE')"
+log "[DIAG] Wine libs i386: $(ls /opt/wine-stable/lib/wine/i386-unix/ 2>/dev/null | head -3 || echo 'NONE')"
+log "[DIAG] Wine version: $($wine_executable --version 2>&1 || echo 'FAILED')"
 
 # ── [0/7] Initialize Wine prefix ──────────────────────────────────────────────
 wine_ok=false
@@ -69,17 +79,15 @@ fi
 
 if [ "$wine_ok" = "false" ]; then
   log "[0/7] Initializing Wine prefix (this may take several minutes)..."
-  # Start wineserver explicitly first
   wineserver -f &
   WSERVER_PID=$!
   sleep 2
-  log "[0/7] Wineserver PID: $WSERVER_PID"
-  # Initialize the prefix with verbose output for first 30 seconds
-  timeout 300 $wine_executable wineboot --init 2>&1 | head -50 || true
-  log "[0/7] Wineboot returned, waiting for server..."
+  log "[0/7] Wineserver started (PID: $WSERVER_PID)"
+  # Init with visible output (don't suppress with WINEDEBUG=-all)
+  WINEDEBUG=fixme-all timeout 300 $wine_executable wineboot --init 2>&1 | grep -v '^fixme:' | head -100 || true
+  log "[0/7] Wineboot returned."
   wineserver -w 2>/dev/null || true
   sleep 3
-  # Check if prefix was created successfully  
   if [ -f "$WINEPREFIX/system.reg" ]; then
     log "[0/7] Wine prefix created successfully."
   else
