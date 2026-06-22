@@ -12,9 +12,6 @@ metatrader_version="5.0.36"
 mt5server_port="${BRIDGE_PORT:-8001}"
 mt5file="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
 
-# Auto-login: set MT5_CMD_OPTIONS in Zeabur, e.g.
-# MT5_CMD_OPTIONS=/login:12345 /password:yourpass /server:Broker-Demo
-# If unset, build it from individual MT5_LOGIN / MT5_PASSWORD / MT5_SERVER vars.
 MT5_CMD_OPTIONS="${MT5_CMD_OPTIONS:-}"
 if [ -z "$MT5_CMD_OPTIONS" ] && [ -n "${MT5_LOGIN:-}" ]; then
   MT5_CMD_OPTIONS="/login:${MT5_LOGIN} /password:${MT5_PASSWORD:-} /server:${MT5_SERVER:-}"
@@ -34,32 +31,48 @@ is_wine_python_package_installed() {
 }
 
 mkdir -p /config
-
-# Route heavy temp writes + Wine sockets onto the /config volume
 export TMPDIR=/config/tmp
 export XDG_RUNTIME_DIR=/config/run
 mkdir -p "$TMPDIR" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
-# ── Virtual display (headless, no VNC) ────────────────────────────────────────
+# ── Virtual display ────────────────────────────────────────────────────────────
 if ! pgrep -f "Xvfb $DISPLAY" >/dev/null 2>&1; then
   Xvfb "$DISPLAY" -screen 0 1280x800x24 &
   sleep 3
 fi
 log "[OK] Virtual display $DISPLAY started."
 
-# ── Start winbind (required for Wine to load kernel32.dll) ────────────────────
-log "[PRE] Starting winbind service..."
-service winbind start 2>/dev/null || winbindd --no-process-group 2>/dev/null &
+# ── Start winbindd directly (without systemd) ─────────────────────────────────
+log "[PRE] Starting winbindd..."
+winbindd --no-process-group 2>/dev/null &
 sleep 2
-log "[PRE] Winbind ready."
+log "[PRE] Winbind daemon started."
 
 # ── [0/7] Initialize Wine prefix ──────────────────────────────────────────────
-if [ ! -f "$WINEPREFIX/system.reg" ]; then
+# Test if the existing prefix is valid by running a simple wine command
+wine_ok=false
+if [ -f "$WINEPREFIX/system.reg" ]; then
+  log "[0/7] Testing existing Wine prefix..."
+  if $wine_executable cmd /c "echo test" >/dev/null 2>&1; then
+    wine_ok=true
+    log "[0/7] Existing Wine prefix is healthy."
+  else
+    log "[0/7] Existing Wine prefix is broken - removing and reinitializing..."
+    rm -rf "$WINEPREFIX"
+  fi
+fi
+
+if [ "$wine_ok" = "false" ]; then
   log "[0/7] Initializing Wine prefix..."
-  WINEDEBUG=fixme-all $wine_executable wineboot --init 2>&1 | grep -v '^fixme:' || true
+  # Start wineserver explicitly first
+  wineserver -f &
+  sleep 2
+  # Initialize the prefix
+  WINEDEBUG=-all $wine_executable wineboot --init
   wineserver -w 2>/dev/null || true
   sleep 5
+  log "[0/7] Wine prefix initialized."
 fi
 log "[0/7] Wine prefix ready."
 
@@ -68,6 +81,7 @@ if [ ! -e "$WINEPREFIX/drive_c/windows/mono" ]; then
   log "[1/7] Installing Wine Mono..."
   curl -L -o "$TMPDIR/mono.msi" "$mono_url"
   WINEDLLOVERRIDES=mscoree=d $wine_executable msiexec /i "$TMPDIR/mono.msi" /qn
+  wineserver -w 2>/dev/null || true
   rm -f "$TMPDIR/mono.msi"
 else
   log "[1/7] Wine Mono already present."
@@ -87,10 +101,10 @@ else
   rm -f "$WINEPREFIX/drive_c/mt5setup.exe"
 fi
 
-# ── [4/7] Launch terminal (with auto-login if provided) ───────────────────────
+# ── [4/7] Launch terminal ─────────────────────────────────────────────────────
 if [ -e "$mt5file" ]; then
   log "[4/7] Launching MT5 terminal..."
-  [ -n "$MT5_CMD_OPTIONS" ] && log "[4/7] Using auto-login options." || log "[4/7] No MT5_CMD_OPTIONS set; terminal will need manual credentials."
+  [ -n "$MT5_CMD_OPTIONS" ] && log "[4/7] Using auto-login options." || log "[4/7] No MT5_CMD_OPTIONS set."
   $wine_executable "$mt5file" $MT5_CMD_OPTIONS &
 else
   log "[4/7] ERROR: MT5 executable missing; cannot launch."
@@ -101,6 +115,7 @@ if ! $wine_executable python --version 2>/dev/null; then
   log "[5/7] Installing Python in Wine..."
   curl -L "$python_url" -o "$TMPDIR/python-installer.exe"
   $wine_executable "$TMPDIR/python-installer.exe" /quiet InstallAllUsers=1 PrependPath=1
+  wineserver -w 2>/dev/null || true
   rm -f "$TMPDIR/python-installer.exe"
 else
   log "[5/7] Python already installed in Wine."
@@ -124,7 +139,7 @@ if ! is_python_package_installed "mt5linux"; then
   pip install --break-system-packages --no-cache-dir rpyc plumbum numpy
 fi
 
-# ── [7/7] mt5linux RPyC bridge (foreground - keeps container alive) ───────────
+# ── [7/7] mt5linux RPyC bridge ────────────────────────────────────────────────
 log "[7/7] Starting mt5linux server on port ${mt5server_port}..."
 python3 -m mt5linux --host 0.0.0.0 -p "$mt5server_port" -w "$wine_executable" python.exe &
 BRIDGE_PID=$!
@@ -136,5 +151,4 @@ else
   log "[7/7] WARNING: bridge not bound yet on $mt5server_port (may still be starting)."
 fi
 
-# Keep the container in the foreground on the bridge process.
 wait "$BRIDGE_PID"
