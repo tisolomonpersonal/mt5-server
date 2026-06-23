@@ -83,8 +83,8 @@ if [ "$wine_ok" = "false" ]; then
   WSERVER_PID=$!
   sleep 2
   log "[0/7] Wineserver started (PID: $WSERVER_PID)"
-  # Init with visible output (don't suppress with WINEDEBUG=-all)
-  WINEDEBUG=fixme-all timeout 300 $wine_executable wineboot --init 2>&1 | grep -v '^fixme:' | head -100 || true
+  # Fix: removed head -100 pipe that caused hangs; increased timeout to 600s
+  WINEDEBUG=fixme-all timeout 600 $wine_executable wineboot --init 2>/dev/null || true
   log "[0/7] Wineboot returned."
   wineserver -w 2>/dev/null || true
   sleep 3
@@ -118,8 +118,10 @@ else
   log "[3/7] Running MT5 installer..."
   $wine_executable "$WINEPREFIX/drive_c/mt5setup.exe" "/auto" &
   wait
+  sleep 10
   rm -f "$WINEPREFIX/drive_c/mt5setup.exe"
 fi
+log "[2/7] MT5 installed."
 
 # ── [4/7] Launch terminal ─────────────────────────────────────────────────────
 if [ -e "$mt5file" ]; then
@@ -141,7 +143,7 @@ else
   log "[5/7] Python already installed in Wine."
 fi
 
-# ── [6/7] Python libraries ────────────────────────────────────────────────────
+# ── [6/7] Python libraries ─────────────────────────────────────────────────────
 log "[6/7] Ensuring Python libraries..."
 $wine_executable python -m pip install --upgrade --no-cache-dir pip
 
@@ -154,21 +156,22 @@ fi
 if ! is_wine_python_package_installed "python-dateutil"; then
   $wine_executable python -m pip install --no-cache-dir python-dateutil
 fi
+
 if ! is_python_package_installed "mt5linux"; then
   pip install --break-system-packages --no-cache-dir --no-deps mt5linux && \
   pip install --break-system-packages --no-cache-dir rpyc plumbum numpy
 fi
 
-# ── [7/7] mt5linux RPyC bridge ────────────────────────────────────────────────
+# ── [7/7] mt5linux RPyC bridge ─────────────────────────────────────────────────
 log "[7/7] Starting mt5linux server on port ${mt5server_port}..."
 python3 -m mt5linux --host 0.0.0.0 -p "$mt5server_port" -w "$wine_executable" python.exe &
 BRIDGE_PID=$!
 
 sleep 5
-if ss -tuln | grep ":$mt5server_port" >/dev/null; then
-  log "[7/7] mt5linux server is listening on port $mt5server_port."
+if ss -tuln | grep ":${mt5server_port}" >/dev/null; then
+  log "[7/7] mt5linux server is listening on port ${mt5server_port}."
 else
-  log "[7/7] WARNING: bridge not bound yet on $mt5server_port (may still be starting)."
+  log "[7/7] WARNING: bridge not bound yet on ${mt5server_port} (may still be starting)."
 fi
 
 wait "$BRIDGE_PID"
