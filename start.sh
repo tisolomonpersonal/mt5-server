@@ -17,7 +17,7 @@ else
 fi
 
 metatrader_version="5.0.36"
-mt5server_port="${BRIDGE_PORT:-8001}"
+mt5server_port="${BRIDGE_PORT:-${PORT:-8001}}"
 mt5file="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
 
 MT5_CMD_OPTIONS="${MT5_CMD_OPTIONS:-}"
@@ -30,6 +30,11 @@ python_url="https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe"
 mt5setup_url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
 
 log() { echo "[$(date '+%H:%M:%S')] $1"; }
+
+die() {
+  log "ERROR: $1"
+  exit 1
+}
 
 is_python_package_installed() {
   python3 -c "import pkg_resources; exit(not pkg_resources.require('$1'))" 2>/dev/null
@@ -120,6 +125,7 @@ else
   wait
   sleep 10
   rm -f "$WINEPREFIX/drive_c/mt5setup.exe"
+  [ -e "$mt5file" ] || die "MT5 installer finished, but terminal64.exe was not created."
 fi
 log "[2/7] MT5 installed."
 

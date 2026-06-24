@@ -5,7 +5,7 @@ ENV WINEPREFIX=/config/.wine
 ENV WINEARCH=win64
 ENV WINEDEBUG=-all
 ENV DISPLAY=:99
-ENV BRIDGE_PORT=8001
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Wine + a virtual display (no VNC/desktop) + Python, slimmed in one layer
 RUN apt-get update \
@@ -21,12 +21,16 @@ RUN apt-get update \
     iproute2 \
     python3 \
     python3-pip \
+    python3-pkg-resources \
+    python3-setuptools \
  && mkdir -pm755 /etc/apt/keyrings \
  && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
  && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
  && dpkg --add-architecture i386 \
  && apt-get update \
  && apt-get install --install-recommends -y winehq-stable \
+ && python3 -m pip install --no-cache-dir --upgrade pip \
+ && python3 -m pip install --no-cache-dir mt5linux rpyc plumbum numpy \
  && apt-get purge -y --auto-remove gnupg2 \
  && apt-get clean \
  && rm -rf \

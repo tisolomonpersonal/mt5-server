@@ -1,59 +1,75 @@
 # mt5-server
 
-Headless Wine-based MetaTrader 5 bridge for `eth-trader-bot`.
+Headless Docker service for running the Windows MetaTrader 5 terminal on Linux
+through Wine and exposing the Python MetaTrader5 API through `mt5linux`.
 
-Built on a minimal `debian:bookworm-slim` base to keep the image small (the
-KasmVNC desktop variant produced a ~4–5 GB image that Zeabur couldn't pull →
-`ImagePullBackOff`). This variant has **no GUI/VNC** — MT5 runs under a virtual
-display (Xvfb) and logs in automatically from environment variables.
+This is intended for a server platform such as Zeabur. There is no desktop, VNC,
+or browser UI. MT5 runs under Xvfb and logs in from environment variables.
 
-## Architecture
+## How it works
 
-- **`debian:bookworm-slim` + winehq-stable** runs the Windows MT5 terminal and a
-  full Windows Python 3.9.13.
-- **Xvfb** provides a headless virtual display (MT5 is a GUI app and needs one),
-  but there is **no VNC or web desktop**.
-- **mt5linux RPyC bridge** is started from the Linux side via
-  `python3 -m mt5linux ... -w wine python.exe` and exposes the MetaTrader5 API
-  on port 8001. The bridge runs in the foreground and keeps the container alive.
-- No server-side `mt5.initialize()` readiness loop — `initialize()` is called by
-  the **client** (eth-trader-bot).
+- `debian:bookworm-slim` runs `winehq-stable`.
+- `Xvfb` provides the virtual display required by the MT5 GUI.
+- On first boot, `/start.sh` creates `/config/.wine`, installs MT5, installs
+  Windows Python 3.9.13, and installs the Windows `MetaTrader5` Python package.
+- The Linux-side `mt5linux` bridge listens on `0.0.0.0:8001` by default.
+- `/config` is a volume so the Wine prefix, MT5 install, and Windows Python can
+  survive container restarts when the host platform attaches persistent storage.
 
-## Auto-login (required for headless)
+## Zeabur deployment
 
-Since there's no GUI, MT5 must log in from credentials. Set **either**:
+Deploy this repository as a Docker service.
 
-- `MT5_CMD_OPTIONS=/login:12345 /password:yourpass /server:Broker-Demo`, **or**
-- the individual vars `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER` (the script builds
-  the command-line options from them).
+Set these environment variables in Zeabur:
 
-The broker named in `/server:` must be reachable from MetaQuotes' server
-directory for a first-time headless login to succeed.
+| Variable | Required | Example |
+| --- | --- | --- |
+| `MT5_LOGIN` | yes | `12345678` |
+| `MT5_PASSWORD` | yes | `your-password` |
+| `MT5_SERVER` | yes | `Broker-Demo` |
+| `BRIDGE_PORT` | no | `8001` |
 
-## Ports
+Alternatively, provide the full MT5 command line yourself:
 
-| Port | Purpose |
-|------|---------|
-| 8001 | mt5linux RPyC bridge (the Python API endpoint) |
+```text
+MT5_CMD_OPTIONS=/login:12345678 /password:your-password /server:Broker-Demo
+```
+
+Expose port `8001` on the Zeabur service. If Zeabur injects a `PORT`
+environment variable and `BRIDGE_PORT` is unset, the startup script will use
+`PORT`.
+
+Attach a persistent volume mounted at:
+
+```text
+/config
+```
+
+First boot can take several minutes because MT5 and Windows Python are installed
+inside the Wine prefix. Later boots should reuse `/config/.wine`.
 
 ## Client usage
 
+Install `mt5linux` in your trading client, then connect to the Zeabur host:
+
 ```python
 from mt5linux import MetaTrader5
-mt5 = MetaTrader5(host="<zeabur-host>", port=8001)
+
+mt5 = MetaTrader5(host="<your-zeabur-host>", port=8001)
 mt5.initialize()
 ```
 
-## Environment Overrides
+Keep your trading account credentials in Zeabur environment variables only. Do
+not commit passwords, account numbers, broker secrets, or strategy secrets to
+this repository.
 
-- `BRIDGE_PORT` — RPyC bridge port (default `8001`)
-- `MT5_CMD_OPTIONS` — full terminal command-line flags (auto-login)
-- `MT5_LOGIN` / `MT5_PASSWORD` / `MT5_SERVER` — used if `MT5_CMD_OPTIONS` is unset
+## Troubleshooting
 
-## Deploy Notes (Zeabur)
-
-- Expose **port 8001**.
-- The `/config` volume persists Wine, MT5, and Python across reboots — first boot
-  installs everything (a few minutes), later boots reuse it.
-- If a previous broken prefix is reused, delete the service volume once and
-  redeploy so `/config/.wine` is recreated cleanly.
+- If startup logs say `terminal64.exe was not created`, delete the attached
+  `/config` volume and redeploy so Wine can create a clean prefix.
+- If `mt5.initialize()` fails from the client, confirm the Zeabur TCP port is
+  exposed and the broker server name exactly matches the server shown by your
+  broker.
+- If the first login fails, some brokers require an interactive first login or
+  additional 2FA/OTP approval. This headless image cannot complete interactive
+  login prompts.
