@@ -7,7 +7,7 @@ ENV WINEDEBUG=-all
 ENV DISPLAY=:99
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Wine + a virtual display (no VNC/desktop) + Python, slimmed in one layer
+# Wine + virtual display + Python — all in one layer
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -44,10 +44,24 @@ RUN apt-get update \
     /opt/wine-stable/share/man/* \
     /opt/wine-stable/share/doc/*
 
+# Pre-download all installers into the image so startup never needs internet
+# (these are large but save several minutes on every container restart)
+RUN mkdir -p /opt/installers \
+ && curl -fL -o /opt/installers/mono.msi \
+    "https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi" \
+ && curl -fL -o /opt/installers/python-installer.exe \
+    "https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe" \
+ && curl -fL -o /opt/installers/mt5setup.exe \
+    "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" \
+ && echo "Installers cached:" \
+ && ls -lh /opt/installers/
+
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 EXPOSE 8001
+
+# /config must be a persistent volume on Zeabur — mount it to survive restarts
 VOLUME ["/config"]
 
 CMD ["/start.sh"]
